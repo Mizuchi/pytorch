@@ -268,7 +268,7 @@ struct MPSKernelCache {
     dispatch_sync_with_rethrow(serialQueue_, ^() {
       if (cache_.count(hash) != 0) {
         auto& entry = cache_.at(hash);
-        TORCH_INTERNAL_ASSERT_DEBUG_ONLY(key == entry.key_, "Key collision in the MPS cached graph!\n");
+        TORCH_INTERNAL_ASSERT_DEBUG_ONLY(key == entry.key_, "Key collision in the MPS cached kernel!\n");
         cachedKernel = entry.cachedKernel_;
       } else {
         cachedKernel = createCacheBlock();
@@ -290,7 +290,7 @@ struct MPSKernelCache {
     dispatch_sync_with_rethrow(serialQueue_, ^() {
       if (cache_.count(hash) != 0) {
         auto& entry = cache_.at(hash);
-        TORCH_INTERNAL_ASSERT_DEBUG_ONLY(key == entry.key_, "Key collision in the MPS cached graph!\n");
+        TORCH_INTERNAL_ASSERT_DEBUG_ONLY(key == entry.key_, "Key collision in the MPS cached kernel!\n");
         cachedKernel = entry.cachedKernel_;
       }
     });
@@ -304,7 +304,7 @@ struct MPSKernelCache {
 
  private:
   MPSKernelCache() {
-    serialQueue_ = dispatch_queue_create("cache queue", DISPATCH_QUEUE_SERIAL);
+    serialQueue_ = getCurrentMPSStream()->queue();
   }
 
   static MPSKernelCache* _instance_cache;
