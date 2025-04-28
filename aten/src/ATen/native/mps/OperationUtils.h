@@ -167,6 +167,10 @@ struct MPSCachedKernel {
     _object = nullptr;
   }
 
+  // Delete copy constructor and assignment
+  MPSCachedKernel(const MPSCachedKernel&) = delete;
+  void operator=(const MPSCachedKernel&) = delete;
+
   template <typename T>
   inline T* kernel() const {
     return (T*)_object;

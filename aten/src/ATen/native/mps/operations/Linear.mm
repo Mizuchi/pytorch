@@ -5,6 +5,7 @@
 #include <ATen/native/mps/OperationUtils.h>
 #include <ATen/ops/linear_backward_native.h>
 #include <ATen/ops/linear_native.h>
+#include <ATen/native/mps/MPSGraphSequoiaOps.h>
 
 namespace at::native {
 
