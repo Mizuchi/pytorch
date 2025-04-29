@@ -304,7 +304,7 @@ struct MPSKernelCache {
 
  private:
   MPSKernelCache() {
-    serialQueue_ = getCurrentMPSStream()->queue();
+    serialQueue_ = dispatch_queue_create("kernel cache queue", DISPATCH_QUEUE_SERIAL);
   }
 
   static MPSKernelCache* _instance_cache;

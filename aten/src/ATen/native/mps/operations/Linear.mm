@@ -11,6 +11,60 @@ namespace at::native {
 
 using namespace mps;
 
+static void _mps_linear_nograph(const Tensor& input, const Tensor& weight, const Tensor& bias, Tensor& output) {
+  bool is_bias_defined = bias.defined();
+
+  MPSStream* mpsStream = getCurrentMPSStream();
+  id<MTLDevice> device = MPSDevice::getInstance()->device();
+  id<MTLComputeCommandEncoder> computeEncoder = mpsStream->commandEncoder();
+
+  const string key = "mps_linear" + getTensorsStringKey({input, weight, bias}, true, true);
+  dispatch_sync_with_rethrow(mpsStream->queue(), ^() {
+    @autoreleasepool {
+      mpsStream->endKernelCoalescing();
+      id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
+
+      MPSDataType mpsDataType = getMPSDataType(weight.scalar_type());
+
+      auto inputNDArray = getMPSNDArray(input, input.sizes(), input.strides());
+      auto outNDArray = getMPSNDArray(output, output.sizes(), output.strides());
+
+      id<MTLBuffer> weightBuf = getMTLBufferStorage(weight);
+      MPSNDArrayDescriptor* weightDesc = [MPSNDArrayDescriptor descriptorWithDataType:mpsDataType
+                                                                                shape:getMPSShape(weight.sizes())];
+      weightDesc.preferPackedRows = YES;
+      [weightDesc transposeDimension:0 withDimension:1];
+      MPSNDArray* weightNDArray = [[MPSNDArray alloc] initWithBuffer:weightBuf
+                                                              offset:weight.storage_offset() * weight.element_size()
+                                                          descriptor:weightDesc];
+
+      if (is_bias_defined) {
+        auto biasNDArray = getMPSNDArray(bias, bias.sizes(), bias.strides());
+        auto cachedKernel = LookUpOrCreateCachedKernel<MPSCachedKernel>(
+            key, [&]() { return [[MPSNDArrayMatrixMultiplication alloc] initWithDevice:device sourceCount:3]; });
+        auto kernel = cachedKernel->kernel<MPSNDArrayMatrixMultiplication>();
+
+        getMPSProfiler().beginProfileKernel(kernel, "mps_linear", {input, weight, bias});
+        [kernel encodeToCommandEncoder:computeEncoder
+                         commandBuffer:commandBuffer
+                          sourceArrays:@[ inputNDArray, weightNDArray, biasNDArray ]
+                      destinationArray:outNDArray];
+        getMPSProfiler().endProfileKernel(kernel);
+      } else {
+        auto cachedKernel = LookUpOrCreateCachedKernel<MPSCachedKernel>(
+            key, [&]() { return [[MPSNDArrayMatrixMultiplication alloc] initWithDevice:device sourceCount:2]; });
+        auto kernel = cachedKernel->kernel<MPSNDArrayMatrixMultiplication>();
+        getMPSProfiler().beginProfileKernel(kernel, "mps_linear", {input, weight, bias});
+        [kernel encodeToCommandEncoder:computeEncoder
+                         commandBuffer:commandBuffer
+                          sourceArrays:@[ inputNDArray, weightNDArray ]
+                      destinationArray:outNDArray];
+        getMPSProfiler().endProfileKernel(kernel);
+      }
+    }
+  });
+}
+
 Tensor _mps_linear(const Tensor& input, const Tensor& weight_arg, const std::optional<Tensor>& bias_opt) {
   // wT = transpose(weight);
   // y=x*wT+b
@@ -61,55 +115,7 @@ Tensor _mps_linear(const Tensor& input, const Tensor& weight_arg, const std::opt
 
   bool is_macos_15_or_newer = is_macos_13_or_newer(MacOSVersion::MACOS_VER_15_0_PLUS);
   if (is_macos_15_or_newer) {
-    MPSStream* mpsStream = getCurrentMPSStream();
-    id<MTLDevice> device = MPSDevice::getInstance()->device();
-    id<MTLComputeCommandEncoder> computeEncoder = mpsStream->commandEncoder();
-
-    const string key = "mps_linear" + getTensorsStringKey({input, weight, bias}, true, true);
-    dispatch_sync_with_rethrow(mpsStream->queue(), ^() {
-      @autoreleasepool {
-        mpsStream->endKernelCoalescing();
-        id<MTLCommandBuffer> commandBuffer = mpsStream->commandBuffer();
-
-        MPSDataType mpsDataType = getMPSDataType(weight.scalar_type());
-
-        auto inputNDArray = getMPSNDArray(input, input.sizes(), input.strides());
-        auto outNDArray = getMPSNDArray(output, output.sizes(), output.strides());
-
-        id<MTLBuffer> weightBuf = getMTLBufferStorage(weight);
-        MPSNDArrayDescriptor* weightDesc = [MPSNDArrayDescriptor descriptorWithDataType:mpsDataType
-                                                                                  shape:getMPSShape(weight.sizes())];
-        weightDesc.preferPackedRows = YES;
-        [weightDesc transposeDimension:0 withDimension:1];
-        MPSNDArray* weightNDArray = [[MPSNDArray alloc] initWithBuffer:weightBuf
-                                                                offset:weight.storage_offset() * weight.element_size()
-                                                            descriptor:weightDesc];
-
-        if (is_bias_defined) {
-          auto biasNDArray = getMPSNDArray(bias, bias.sizes(), bias.strides());
-          auto cachedKernel = LookUpOrCreateCachedKernel<MPSCachedKernel>(
-              key, [&]() { return [[MPSNDArrayMatrixMultiplication alloc] initWithDevice:device sourceCount:3]; });
-          auto kernel = cachedKernel->kernel<MPSNDArrayMatrixMultiplication>();
-
-          getMPSProfiler().beginProfileKernel(kernel, "mps_linear", {input, weight, bias});
-          [kernel encodeToCommandEncoder:computeEncoder
-                           commandBuffer:commandBuffer
-                            sourceArrays:@[ inputNDArray, weightNDArray, biasNDArray ]
-                        destinationArray:outNDArray];
-          getMPSProfiler().endProfileKernel(kernel);
-        } else {
-          auto cachedKernel = LookUpOrCreateCachedKernel<MPSCachedKernel>(
-              key, [&]() { return [[MPSNDArrayMatrixMultiplication alloc] initWithDevice:device sourceCount:2]; });
-          auto kernel = cachedKernel->kernel<MPSNDArrayMatrixMultiplication>();
-          getMPSProfiler().beginProfileKernel(kernel, "mps_linear", {input, weight, bias});
-          [kernel encodeToCommandEncoder:computeEncoder
-                           commandBuffer:commandBuffer
-                            sourceArrays:@[ inputNDArray, weightNDArray ]
-                        destinationArray:outNDArray];
-          getMPSProfiler().endProfileKernel(kernel);
-        }
-      }
-    });
+    _mps_linear_nograph(input, weight, bias, output);
   } else {
     MPSStream* stream = getCurrentMPSStream();
     struct CachedGraph : public MPSCachedGraph {
