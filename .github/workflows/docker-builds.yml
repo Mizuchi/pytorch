@@ -104,7 +104,7 @@ jobs:
 
       - name: Build docker image
         id: build-docker-image
-        uses: pytorch/test-infra/.github/actions/calculate-docker-image@csl/linux_job_v2_custom_docker_tag
+        uses: pytorch/test-infra/.github/actions/calculate-docker-image@csl/maybe_better_calc_docker_imge
         with:
           docker-image-name: ci-image:${{ matrix.docker-image-name }}
           always-rebuild: true
