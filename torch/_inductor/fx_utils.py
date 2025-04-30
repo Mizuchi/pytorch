@@ -8,6 +8,7 @@ import sympy
 import torch
 import torch.fx
 from torch._dispatch.python import enable_python_dispatcher
+from torch._subclasses.fake_tensor import FakeTensorMode
 from torch.fx.experimental.symbolic_shapes import (
     compute_unbacked_bindings,
     rebind_unbacked,
@@ -254,23 +255,24 @@ def is_node_realized(node: torch.fx.Node) -> bool:
 
 
 def count_flops_fx(node: torch.fx.Node) -> Optional[int]:
-    success, args, kwargs = get_fake_args_kwargs(node)
+    with FakeTensorMode(allow_non_fake_inputs=True):
+        success, args, kwargs = get_fake_args_kwargs(node)
 
-    if success:
-        with torch.utils.flop_counter.FlopCounterMode(
-            display=False
-        ) as flop_counter_mode:
-            with V.fake_mode:
+        if success:
+            with torch.utils.flop_counter.FlopCounterMode(
+                display=False
+            ) as flop_counter_mode:
                 node.target(*args, **kwargs)
-            # try:
-            #     with V.fake_mode:
-            #         node.target(*args, **kwargs)
-            # except:
-            #     breakpoint()
+                # try:
+                #     with V.fake_mode:
+                #         node.target(*args, **kwargs)
+                # except:
+                #     breakpoint()
 
-        counted_flops = flop_counter_mode.get_total_flops()
-        return counted_flops
+            counted_flops = flop_counter_mode.get_total_flops()
+            return counted_flops
     return None
+
 
 def countable_fx(node: torch.fx.Node) -> bool:
     assert isinstance(node, torch.fx.Node)

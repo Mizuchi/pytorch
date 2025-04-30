@@ -31,7 +31,6 @@ from torch._dynamo.utils import counters, dynamo_timed, identity, preserve_rng_s
 from torch._inductor.utils import clear_on_fresh_inductor_cache
 from torch.utils._filelock import FileLock
 from torch.utils._ordered_set import OrderedSet
-from .fx_utils import countable_fx
 
 from ..utils._sympy.functions import CeilDiv
 from . import config, ir
@@ -59,7 +58,7 @@ from .codegen.triton import (
 from .codegen.triton_utils import config_of, equal_1_arg_indices, signature_to_meta
 from .codegen.wrapper import pexpr
 from .exc import CUDACompileError
-from .fx_utils import count_flops_fx
+from .fx_utils import count_flops_fx, countable_fx
 from .ir import ChoiceCaller, PrimitiveInfoType
 from .ops_handler import StoreMode
 from .runtime.benchmarking import benchmarker
