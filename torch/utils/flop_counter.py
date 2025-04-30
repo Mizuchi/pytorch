@@ -11,7 +11,7 @@ from math import prod
 from functools import wraps
 import warnings
 
-__all__ = ["FlopCounterMode", "register_flop_formula"]
+__all__ = ["FlopCounterMode", "register_flop_formula", "countable"]
 
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
