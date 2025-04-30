@@ -263,11 +263,6 @@ def count_flops_fx(node: torch.fx.Node) -> Optional[int]:
                 display=False
             ) as flop_counter_mode:
                 node.target(*args, **kwargs)
-                # try:
-                #     with V.fake_mode:
-                #         node.target(*args, **kwargs)
-                # except:
-                #     breakpoint()
 
             counted_flops = flop_counter_mode.get_total_flops()
             return counted_flops

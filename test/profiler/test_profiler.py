@@ -3040,15 +3040,12 @@ aten::mm""",
 
         trace1 = "/tmp/trace1_pb.json"
         trace2 = "/tmp/trace2_nopb.json"
-        print(trace1, trace2)
         prof1.export_chrome_trace(trace1)
         prof2.export_chrome_trace(trace2)
-        breakpoint()
 
         n1 = names(prof1)
         n2 = names(prof2)
         self.assertEqual(n1, n2)
-        breakpoint()
 
 
 if __name__ == "__main__":
