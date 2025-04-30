@@ -840,10 +840,10 @@ class BaseSchedulerNode:
             return 0
 
         if isinstance(self, FusedSchedulerNode):
-            flops_est = sum(
+            flops_est: int | None = sum(
                 filter(
-                    lambda x: x is not None,
-                    (node.get_estimated_runtime() for node in self.get_nodes()),
+                    None,
+                    (node.estimate_flops() for node in self.get_nodes()),
                 )
             )
         else:
