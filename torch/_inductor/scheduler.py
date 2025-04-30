@@ -795,7 +795,7 @@ class BaseSchedulerNode:
 
         flops = count_flops_fx(fx_node)
 
-        resolved_flops = V.graph.sizevars.size_hints((flops,))[0]
+        resolved_flops = V.graph.sizevars.size_hints((flops,), fallback=0)[0]
         return resolved_flops
 
     @cache_on_self
