@@ -11,7 +11,7 @@ from math import prod
 from functools import wraps
 import warnings
 
-__all__ = ["FlopCounterMode", "register_flop_formula", "countable"]
+__all__ = ["FlopCounterMode", "register_flop_formula"]
 
 _T = TypeVar("_T")
 _P = ParamSpec("_P")
@@ -790,13 +790,3 @@ class _FlopCounterMode(TorchDispatchMode):
         # no further decomposition; execute & count flops
         out = func(*args, **kwargs)
         return self.counter._count_flops(func._overloadpacket, out, args, kwargs)
-
-def countable(node: torch.fx.Node) -> bool:
-    assert isinstance(node, torch.fx.Node)
-    if not hasattr(node, "target"):
-        return False
-    target = node.target
-    if not hasattr(target, "overloadpacket"):
-        return False
-    packet = target.overloadpacket
-    return packet in flop_registry

@@ -61,6 +61,7 @@ from .exc import (
     MissingOperatorWithDecomp,
     MissingOperatorWithoutDecomp,
 )
+from .fx_utils import count_flops_fx
 from .ir import (
     Constant,
     DonatedBuffer,
@@ -92,7 +93,6 @@ from .runtime.autotune_cache import AutotuneCacheBundler
 from .sizevars import SizeVarAllocator
 from .utils import (
     convert_shape_to_inductor,
-    count_flops_fx,
     gather_origins,
     get_cloned_parameter_buffer_name,
     get_donated_idxs,

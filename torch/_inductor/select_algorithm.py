@@ -31,7 +31,7 @@ from torch._dynamo.utils import counters, dynamo_timed, identity, preserve_rng_s
 from torch._inductor.utils import clear_on_fresh_inductor_cache
 from torch.utils._filelock import FileLock
 from torch.utils._ordered_set import OrderedSet
-from torch.utils.flop_counter import countable
+from .fx_utils import countable_fx
 
 from ..utils._sympy.functions import CeilDiv
 from . import config, ir
@@ -59,6 +59,7 @@ from .codegen.triton import (
 from .codegen.triton_utils import config_of, equal_1_arg_indices, signature_to_meta
 from .codegen.wrapper import pexpr
 from .exc import CUDACompileError
+from .fx_utils import count_flops_fx
 from .ir import ChoiceCaller, PrimitiveInfoType
 from .ops_handler import StoreMode
 from .runtime.benchmarking import benchmarker
@@ -67,7 +68,6 @@ from .runtime.triton_compat import HAS_WARP_SPEC
 from .runtime.triton_heuristics import FixedGrid
 from .utils import (
     ceildiv,
-    count_flops_fx,
     FakeIndentedBuffer,
     get_dtype_size,
     is_gpu,
@@ -434,7 +434,7 @@ class TritonTemplateKernel(TritonKernel):
     def estimate_flops(self) -> int:
         for node in self.input_nodes:
             for fx_node in node._current_origins:
-                if countable(fx_node):
+                if countable_fx(fx_node):
                     f = count_flops_fx(fx_node)
                     if f is not None:
                         return V.graph.sizevars.size_hints((f,))[0]
