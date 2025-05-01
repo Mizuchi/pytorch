@@ -138,11 +138,13 @@ def datasheet_tops(dtype: torch.dtype) -> Optional[float]:
         return None
     device_info = lookup_device_info(name)
     if device_info is None:
-        info(f"Device {name} not in datasheet, returning None")
+        log_str = f"Device {name} not in datasheet, returning None"
+        info(log_str)
         return None
     if dtype not in device_info.tops:
-        info(
+        log_str = (
             f"Device {name} does not have a datasheet entry for {dtype}, returning None"
         )
+        info(log_str)
         return None
     return device_info.tops[dtype]

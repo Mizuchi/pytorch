@@ -3,7 +3,7 @@ import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Any, Optional, Protocol, Union
+from typing import Any, Optional, Protocol
 
 import torch
 from torch.autograd import DeviceType
@@ -170,7 +170,7 @@ class ProfileEvent:
 
 def parse_profile_event_list(
     benchmark_name: str,
-    event_list: Union[torch.autograd.profiler_util.EventList, dict[str, Any]],
+    event_list: torch.autograd.profiler_util.EventList,
     wall_time_ms: float,
     nruns: int,
     device_name: str,
