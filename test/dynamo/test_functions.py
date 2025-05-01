@@ -1671,6 +1671,33 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
         return a - b
 
     @make_test
+    def test_set_ctor_iterable(x):
+        var = set(["apple", "banana", "cherry"])
+        if isinstance(var, set):
+            return x + 1
+        else:
+            return x - 1
+
+    @make_test
+    def test_set_equality_frozenset(x):
+        var = set("abc")
+        other = frozenset("abc")
+        if var == other:
+            return x + 1
+        else:
+            return x - 1
+
+    @unittest.expectedFailure
+    @make_test
+    def test_set_in_frozenset(x):
+        var = set("abc")
+        other = set([frozenset("abc")])
+        if var in other:
+            return x + 1
+        else:
+            return x - 1
+
+    @make_test
     def test_set_update_bytecode(x):
         # This produces bytecode SET_UPDATE since python 3.9
         var = {"apple", "banana", "cherry"}
@@ -1718,7 +1745,8 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
     def test_set_intersection(a, b):
         set1 = {"apple", "banana", "cherry"}
         set2 = {"google", "microsoft", "apple"}
-        intersection_set = set1.intersection(set2)
+        set3 = {"shoes", "flipflops", "apple"}
+        intersection_set = set1.intersection(set2, set3)
         if "apple" in intersection_set:
             x = a + b
         else:
@@ -1727,13 +1755,38 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
             y = a + b
         else:
             y = a - b
-        return x, y
+        if "shoes" in intersection_set:
+            z = a + b
+        else:
+            z = a - b
+        return x, y, z
+
+    @make_test
+    def test_set_intersection_update(a, b):
+        set1 = {"apple", "banana", "cherry"}
+        set2 = {"google", "microsoft", "apple"}
+        set3 = {"shoes", "flipflops", "apple"}
+        set1.intersection_update(set2, set3)
+        if "apple" in set1:
+            x = a + b
+        else:
+            x = a - b
+        if "banana" in set1:
+            y = a + b
+        else:
+            y = a - b
+        if "shoes" in set1:
+            z = a + b
+        else:
+            z = a - b
+        return x, y, z
 
     @make_test
     def test_set_union(a, b):
         set1 = {"apple", "banana", "cherry"}
         set2 = {"google", "microsoft", "apple"}
-        union_set = set1.union(set2)
+        set3 = ("shoes", "flipflops", "sneakers")
+        union_set = set1.union(set2, set3)
         if "apple" in union_set:
             x = a + b
         else:
@@ -1742,13 +1795,18 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
             y = a + b
         else:
             y = a - b
-        return x, y
+        if "shoes" in union_set:
+            z = a + b
+        else:
+            z = a - b
+        return x, y, z
 
     @make_test
     def test_set_difference(a, b):
         set1 = {"apple", "banana", "cherry"}
         set2 = {"google", "microsoft", "apple"}
-        difference_set = set1.difference(set2)
+        set3 = {"shoes", "flipflops", "sneakers"}
+        difference_set = set1.difference(set2, set3)
         if "apple" in difference_set:
             x = a + b
         else:
@@ -1757,7 +1815,87 @@ class FunctionTests(torch._dynamo.test_case.TestCase):
             y = a + b
         else:
             y = a - b
+        if "shoes" in difference_set:
+            z = a + b
+        else:
+            z = a - b
+        return x, y, z
+
+    @make_test
+    def test_set_difference_update(a, b):
+        set1 = {"apple", "banana", "cherry"}
+        set2 = {"google", "microsoft", "apple"}
+        set3 = {"shoes", "flipflops", "sneakers"}
+        set1.difference_update(set2, set3)
+        if "apple" in set1:
+            x = a + b
+        else:
+            x = a - b
+        if "banana" in set1:
+            y = a + b
+        else:
+            y = a - b
+        if "shoes" in set1:
+            z = a + b
+        else:
+            z = a - b
+        return x, y, z
+
+    @make_test
+    def test_set_symmetric_difference(a, b):
+        set1 = {"apple", "banana", "cherry"}
+        set2 = {"google", "microsoft", "apple"}
+        symmetric_diff_set = set1.difference(set2)
+        if "apple" in symmetric_diff_set:
+            x = a + b
+        else:
+            x = a - b
+        if "banana" in symmetric_diff_set:
+            y = a + b
+        else:
+            y = a - b
         return x, y
+
+    @make_test
+    def test_set_symmetric_difference_update(a, b):
+        set1 = {"apple", "banana", "cherry"}
+        set2 = {"google", "microsoft", "apple"}
+        set1.difference(set2)
+        if "apple" in set1:
+            x = a + b
+        else:
+            x = a - b
+        if "banana" in set1:
+            y = a + b
+        else:
+            y = a - b
+        return x, y
+
+    @make_test
+    def test_set_discard(a, b):
+        set1 = {"apple", "banana", "cherry"}
+        set2 = {"google", "microsoft", "apple"}
+        set1.discard("banana")
+        set2.discard("cherry")
+        if "banana" in set1:
+            x = a + b
+        else:
+            x = a - b
+        if "cherry" in set2:
+            y = a + b
+        else:
+            y = a - b
+        return x, y
+
+    @make_test
+    def test_set_pop(a, b):
+        set1 = {"apple", "banana", "cherry"}
+        e = set1.pop()
+        if e in set1:
+            x = a + b
+        else:
+            x = a - b
+        return x
 
     def test_set_keys_view(self):
         from collections.abc import KeysView
