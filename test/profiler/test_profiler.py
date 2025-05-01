@@ -2998,6 +2998,7 @@ aten::mm""",
             assert "Overload Name" in key_averages.table()
             validate_json(prof)
 
+    @unittest.skipIf(not torch.cuda.is_available(), "CUDA is required")
     def test_profiler_debug_autotuner(self):
         """
         This test makes sure that profiling events will be present when the kernel is run using the DebugAutotuner.
