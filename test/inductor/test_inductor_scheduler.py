@@ -11,6 +11,8 @@ from torch.testing._internal.common_device_type import (
     instantiate_device_type_tests,
 )
 from torch.testing._internal.common_utils import run_tests, TestCase
+from torch.testing._internal.common_cuda import SM70OrLater
+from torch.testing._internal.common_device_type import skipCUDAIf
 
 
 def FlopCounterMode(*args, **kwargs):
@@ -41,6 +43,7 @@ def cT(device, dtype):
 
 class TestScheduler(TestCase):
     @dtypes(torch.float, torch.double)
+    @skipCUDAIf(not SM70OrLater, "GPU capability is < SM70")
     def test_flop_counter_op(self, device, dtype):
         T = cT(device, dtype)
 
