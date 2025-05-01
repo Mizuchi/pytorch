@@ -1,7 +1,6 @@
-// TODO: Make Fligth Recorder device agnostic
 #ifdef USE_C10D_NCCL
-
 #include <cuda_runtime.h>
+#endif // USE_C10D_NCCL
 #include <nlohmann/json.hpp>
 #ifndef _WIN32
 #include <sys/stat.h>
@@ -15,27 +14,21 @@
 #include <c10/util/WaitCounter.h>
 
 #include <torch/csrc/distributed/c10d/FlightRecorder.hpp>
+#ifdef USE_C10D_NCCL
 #include <torch/csrc/distributed/c10d/ProcessGroupNCCL.hpp>
+#endif // USE_C10D_NCCL
 #include <torch/csrc/distributed/c10d/control_plane/Handlers.hpp>
 
 namespace c10d {
 
-template <typename T, typename EntryT, typename EventType>
+template <typename T, typename EntryT, typename F>
 std::optional<size_t> recordImpl(
     T& obj,
+    F entry_func,
     size_t pg_id,
-    const std::tuple<std::string, std::string>& pg_name,
-    size_t collective_seq_id,
-    size_t p2p_seq_id,
-    size_t op_id,
-    std::string profiling_name,
     const std::vector<at::Tensor>& inputs,
     const std::vector<at::Tensor>& outputs,
-    EventType* start,
-    EventType* end,
-    std::chrono::milliseconds timeout_ms,
-    std::shared_ptr<ProcessGroupStatus> pg_status,
-    bool isP2P) {
+    std::shared_ptr<ProcessGroupStatus> pg_status) {
   if (!obj.enabled_) {
     return std::nullopt;
   }
@@ -47,29 +40,7 @@ std::optional<size_t> recordImpl(
       torch::CapturedTraceback::gather(true, true, obj.capture_cpp_stack_);
   std::lock_guard<std::mutex> guard(obj.mutex_);
 
-  auto te = EntryT{
-      obj.id_,
-      pg_id,
-      pg_name,
-      collective_seq_id,
-      p2p_seq_id,
-      op_id,
-      std::move(profiling_name),
-      std::move(traceback),
-      start,
-      end,
-      c10::getTime(),
-      timeout_ms.count(),
-      isP2P,
-      std::nullopt,
-      std::nullopt,
-      std::nullopt,
-      {},
-      {},
-      {},
-      {},
-      {},
-      false};
+  auto te = entry_func(traceback);
 
   for (const auto& input : inputs) {
     c10::IntArrayRef sizes = input.sizes();
@@ -417,6 +388,8 @@ c10::Dict<c10::IValue, c10::IValue> get_dump(
   return result;
 }
 
+// TODO: To also make dump via HTTP generic.
+#ifdef USE_C10D_NCCL
 control_plane::RegisterHandler dumpHandler{
     "dump_nccl_trace_pickle",
     [](const control_plane::Request& req, control_plane::Response& res) {
@@ -509,6 +482,7 @@ control_plane::RegisterHandler jsonDumpHandler{
               processedParams[onlyActiveStr]),
           "application/json");
     }};
+#endif // USE_C10D_NCCL
 
 bool recursive_mkdir(const std::string& dir) {
   // Check if current dir exists
@@ -646,26 +620,42 @@ std::optional<size_t> FlightRecorder::record(
     std::string profiling_name,
     const std::vector<at::Tensor>& inputs,
     const std::vector<at::Tensor>& outputs,
-    Event* start,
-    Event* end,
+    c10::Event* start,
+    c10::Event* end,
     std::chrono::milliseconds timeout_ms,
     std::shared_ptr<ProcessGroupStatus> pg_status,
     bool isP2P) {
-  return recordImpl<FlightRecorder, FlightRecorder::Entry, Event>(
+  return recordImpl<FlightRecorder, FlightRecorder::Entry>(
       *this,
+      [&](std::shared_ptr<torch::CapturedTraceback> traceback) {
+        return Entry{
+            id_,
+            pg_id,
+            pg_name,
+            collective_seq_id,
+            p2p_seq_id,
+            op_id,
+            std::move(profiling_name),
+            std::move(traceback),
+            start,
+            end,
+            c10::getTime(),
+            timeout_ms.count(),
+            isP2P,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            {},
+            {},
+            {},
+            {},
+            {},
+            false};
+      },
       pg_id,
-      pg_name,
-      collective_seq_id,
-      p2p_seq_id,
-      op_id,
-      std::move(profiling_name),
       inputs,
       outputs,
-      start,
-      end,
-      timeout_ms,
-      std::move(pg_status),
-      isP2P);
+      std::move(pg_status));
 }
 
 void FlightRecorder::record_pg_ranks(
@@ -687,6 +677,10 @@ void FlightRecorder::record_accelerator_version(
   nccl_version_ = std::move(nccl_version);
 }
 
+float getDurationFromEvent(c10::Event& startEvent, c10::Event& endEvent) {
+  TORCH_CHECK(false, "getDuration not supported by c10::Event.")
+}
+
 void FlightRecorder::update_state(Entry& r) {
   update_state_impl(r);
 }
@@ -706,7 +700,7 @@ std::optional<FlightRecorder::Entry> FlightRecorder::getEntry(
 void FlightRecorder::retire_id(
     std::optional<size_t> id,
     bool compute_duration) {
-  retire_id_impl<FlightRecorder::Entry, Event>(
+  retire_id_impl<FlightRecorder::Entry, c10::Event>(
       enabled_, entries_, max_entries_, mutex_, id, compute_duration);
 }
 
@@ -773,6 +767,82 @@ const std::map<std::string, std::map<std::string, std::string>> FlightRecorder::
 }
 
 std::string FlightRecorder::dump_json(
+    bool includeCollectives,
+    bool onlyActive) {
+  return (get_dump_json<FlightRecorder>(*this, includeCollectives, onlyActive))
+      .dump();
+}
+
+std::string FlightRecorder::dump(
+    bool includeCollectives,
+    bool includeStackTraces,
+    bool onlyActive) {
+  return pickle_str(get_dump<FlightRecorder>(
+      *this, includeCollectives, includeStackTraces, onlyActive));
+}
+
+std::unique_ptr<DebugInfoWriter> DebugInfoWriter::writer_ = nullptr;
+std::atomic<bool> DebugInfoWriter::hasWriterRegistered_(false);
+
+#ifdef USE_C10D_NCCL
+
+float getDurationFromEvent(Event& ncclStartEvent, Event& ncclEndEvent) {
+  TORCH_CHECK(
+      ncclEndEvent.query(),
+      "getDuration can only be called after work is succeeded.")
+  return ncclStartEvent.elapsed_time(ncclEndEvent);
+}
+
+std::optional<size_t> FlightRecorderNCCL::record(
+    size_t pg_id,
+    const std::tuple<std::string, std::string>& pg_name,
+    size_t collective_seq_id,
+    size_t p2p_seq_id,
+    size_t op_id,
+    std::string profiling_name,
+    const std::vector<at::Tensor>& inputs,
+    const std::vector<at::Tensor>& outputs,
+    Event* start,
+    Event* end,
+    std::chrono::milliseconds timeout_ms,
+    std::shared_ptr<ProcessGroupStatus> pg_status,
+    bool isP2P) {
+  return recordImpl<FlightRecorderNCCL, FlightRecorderNCCL::CudaEntry>(
+      *this,
+      [&](std::shared_ptr<torch::CapturedTraceback> traceback) {
+        return CudaEntry{
+            id_,
+            pg_id,
+            pg_name,
+            collective_seq_id,
+            p2p_seq_id,
+            op_id,
+            std::move(profiling_name),
+            std::move(traceback),
+            nullptr,
+            nullptr,
+            c10::getTime(),
+            timeout_ms.count(),
+            isP2P,
+            std::nullopt,
+            std::nullopt,
+            std::nullopt,
+            {},
+            {},
+            {},
+            {},
+            {},
+            false,
+            start,
+            end};
+      },
+      pg_id,
+      inputs,
+      outputs,
+      std::move(pg_status));
+}
+
+std::string FlightRecorderNCCL::dump_json(
     const std::optional<std::unordered_map<
         std::string,
         std::unordered_map<std::string, std::string>>>& ncclDumpMap,
@@ -780,21 +850,23 @@ std::string FlightRecorder::dump_json(
     bool onlyActive) {
   // Adding ncclDumpMap to the json object is NCCL specific.
   auto result =
-      get_dump_json<FlightRecorder>(*this, includeCollectives, onlyActive);
+      get_dump_json<FlightRecorderNCCL>(*this, includeCollectives, onlyActive);
+
+  // Adding ncclDumpMap to the json object is NCCL specific.
   if (ncclDumpMap.has_value()) {
     result[nccl_comm_key_str] = ncclDumpMap.value();
   }
   return result.dump();
 }
 
-std::string FlightRecorder::dump(
+std::string FlightRecorderNCCL::dump(
     const std::optional<std::unordered_map<
         std::string,
         std::unordered_map<std::string, std::string>>>& ncclDumpMap,
     bool includeCollectives,
     bool includeStackTraces,
     bool onlyActive) {
-  auto result = get_dump<FlightRecorder>(
+  auto result = get_dump<FlightRecorderNCCL>(
       *this, includeCollectives, includeStackTraces, onlyActive);
 
   // convert ncclDumpMap into a dictionary
@@ -814,18 +886,30 @@ std::string FlightRecorder::dump(
   return pickle_str(result);
 }
 
-std::unique_ptr<DebugInfoWriter> DebugInfoWriter::writer_ = nullptr;
-std::atomic<bool> DebugInfoWriter::hasWriterRegistered_(false);
-
-float getDurationFromEvent(
-    at::cuda::CUDAEvent& ncclStartEvent,
-    at::cuda::CUDAEvent& ncclEndEvent) {
-  TORCH_CHECK(
-      ncclEndEvent.query(),
-      "getDuration can only be called after work is succeeded.")
-  return ncclStartEvent.elapsed_time(ncclEndEvent);
+void FlightRecorderNCCL::update_state(CudaEntry& r) {
+  update_state_impl(r);
 }
 
-} // namespace c10d
+std::vector<FlightRecorderNCCL::CudaEntry> FlightRecorderNCCL::dump_entries() {
+  return dump_entries_impl<FlightRecorderNCCL::CudaEntry>(
+      entries_, next_, mutex_);
+}
 
+const c10::List<c10::IValue> FlightRecorderNCCL::getCollectiveTrace(
+    bool includeStacktraces,
+    bool onlyActive) {
+  // Entries are returned in the order they were recorded
+  auto result = dump_entries();
+  return getCollectiveTraceImpl<FlightRecorderNCCL::CudaEntry>(
+      result, includeStacktraces, onlyActive);
+}
+
+void FlightRecorderNCCL::retire_id(
+    std::optional<size_t> id,
+    bool compute_duration) {
+  retire_id_impl<FlightRecorderNCCL::CudaEntry, Event>(
+      enabled_, entries_, max_entries_, mutex_, id, compute_duration);
+}
 #endif // USE_C10D_NCCL
+
+} // namespace c10d
