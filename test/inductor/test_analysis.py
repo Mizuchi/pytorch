@@ -3,6 +3,7 @@
 import json
 import re
 import tempfile
+import unittest
 import uuid
 from io import StringIO
 from unittest.mock import patch
@@ -15,6 +16,7 @@ from torch._inductor.analysis.profile_analysis import (
     JsonProfile,
     main,
 )
+from torch._inductor.ir import FixedLayout
 from torch._inductor.utils import (
     fresh_inductor_cache,
     run_and_get_code,
@@ -472,6 +474,14 @@ class TestAnalysis(TestCase):
     @skipIf(not SM70OrLater, "Requires sm70")
     @dtypes(torch.float, torch.float16)
     @parametrize("maxat", [(True, "TRITON")])
+    # this tests to see if we can only use a Triton backend for max autotune
+    @unittest.skipIf(
+        torch.cuda.is_available()
+        and not torch._inductor.utils.use_triton_template(
+            FixedLayout(torch.device("cuda"), torch.float16, [400, 800])
+        ),
+        "Solo triton backend not possible",
+    )
     def test_inductor_meta_flop_gb_annotations(self, device, dtype, maxat):
         if device == "cpu":
             return
@@ -520,6 +530,14 @@ class TestAnalysis(TestCase):
         [
             (True, "TRITON"),
         ],
+    )
+    # this tests to see if we can only use a Triton backend for max autotune
+    @unittest.skipIf(
+        torch.cuda.is_available()
+        and not torch._inductor.utils.use_triton_template(
+            FixedLayout(torch.device("cuda"), torch.float16, [400, 800])
+        ),
+        "Solo triton backend not possible",
     )
     def test_triton_has_metadata(self, device, dtype, maxat):
         """
@@ -578,9 +596,18 @@ class TestAnalysis(TestCase):
         ],
     )
     def test_augment_trace_against_flop_counter(self, device, dtype, maxat):
+        # this tests to see if we can only use a Triton backend for max autotune
+        max_autotune, backends = maxat
+        if (
+            backends == "TRITON"
+            and torch.cuda.is_available()
+            and not torch._inductor.utils.use_triton_template(
+                FixedLayout(torch.device("cuda"), torch.float16, [400, 800])
+            )
+        ):
+            return
         if device == "cpu":
             return
-        max_autotune, backends = maxat
         om = omni_model(device, dtype, compile=False)
 
         comp_omni = torch.compile(

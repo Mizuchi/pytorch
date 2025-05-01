@@ -27,6 +27,7 @@ import torch.nn as nn
 import torch.optim
 import torch.utils.data
 from torch._C._profiler import _ExperimentalConfig, _ExtraFields_PyCall
+from torch._inductor.ir import FixedLayout
 from torch.autograd.profiler import KinetoStepTracker, profile as _profile
 from torch.autograd.profiler_legacy import profile as _profile_legacy
 from torch.profiler import (
@@ -2999,6 +3000,14 @@ aten::mm""",
             validate_json(prof)
 
     @unittest.skipIf(not torch.cuda.is_available(), "CUDA is required")
+    # this tests to see if we can only use a Triton backend for max autotune
+    @unittest.skipIf(
+        torch.cuda.is_available()
+        and not torch._inductor.utils.use_triton_template(
+            FixedLayout(torch.device("cuda"), torch.float16, [400, 800])
+        ),
+        "Solo triton backend not possible",
+    )
     def test_profiler_debug_autotuner(self):
         """
         This test makes sure that profiling events will be present when the kernel is run using the DebugAutotuner.
