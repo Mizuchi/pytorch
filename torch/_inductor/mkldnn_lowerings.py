@@ -1,6 +1,6 @@
 # mypy: allow-untyped-defs
 import functools
-from typing import Optional
+from typing import Optional, Union
 
 import torch
 import torch.utils._pytree as pytree
@@ -35,15 +35,17 @@ def create_int8_compensation(
     x_scale: ir.TensorBox,
     x_zp: ir.TensorBox,
     w_scale: ir.TensorBox,
-) -> tuple[bool, ir.TensorBox, Optional[ir.TensorBox]]:
-    use_int8_fast_compensation_path = False
-    weight_compens = None
-    x_w_scale = None
-    if all(
+) -> tuple[
+    bool,
+    Union[ir.TensorBox, ir.ShapeAsConstantBuffer],
+    Optional[Union[ir.TensorBox, ir.ShapeAsConstantBuffer]],
+]:
+    x_w_scale: Optional[Union[ir.TensorBox, ir.ShapeAsConstantBuffer]] = None
+    use_int8_fast_compensation_path = all(
         isinstance(item, ir.TensorBox) and item.get_name() in V.graph.constants
         for item in [x_scale, x_zp, w_scale]
-    ):
-        use_int8_fast_compensation_path = True
+    )
+    if use_int8_fast_compensation_path:
         x_w_scale_tensor = (
             V.graph.constants[x_scale.get_name()]
             * V.graph.constants[w_scale.get_name()]
@@ -65,7 +67,7 @@ def create_int8_compensation(
             weight_compens_tensor,
             name=packed_weight.get_name() + "_BMatrixCompens",
         )
-    return (
+    return (  # type: ignore[return-type]
         use_int8_fast_compensation_path,
         weight_compens,
         x_w_scale,
@@ -179,7 +181,7 @@ def grouped_gemm_lowering(
     if len(x_size) > 2:
         for gemm_idx in range(num_gemm):
             return_tensors[gemm_idx] = view(
-                return_tensors[gemm_idx],
+                return_tensors[gemm_idx],  # type: ignore[arg-type]
                 (*x_size[:-1], return_tensors[gemm_idx].get_size()[-1]),
             )
     return return_tensors
@@ -336,7 +338,7 @@ def register_onednn_fusion_ops():
                 # GEMM template needs 2D input, normalize input shape here
                 x = view(x, [-1, x_size[-1]])
             if b is not None:
-                b = ir.ExternKernel.realize_input(b)
+                b = ir.ExternKernel.realize_input(b)  # type: ignore[assignment]
             choices: list[ChoiceCaller] = []
             if use_max_autotune():
                 transposed_w = permute(w, [1, 0])
@@ -399,7 +401,7 @@ def register_onednn_fusion_ops():
             if len(y_size) > 2:
                 y = view(y, [-1, y_size[-1]])
             if b is not None:
-                b = ir.ExternKernel.realize_input(b)
+                b = ir.ExternKernel.realize_input(b)  # type: ignore[assignment]
             choices: list[ChoiceCaller] = []
             if use_max_autotune():
                 transposed_w = permute(w, [1, 0])
@@ -626,8 +628,8 @@ def register_onednn_fusion_ops():
             return TensorBox.create(
                 mkldnn_ir.QConvPointWiseBinaryPT2E.create(
                     x,
-                    x_scale,
-                    x_zp,
+                    x_scale,  # type: ignore[arg-type]
+                    x_zp,  # type: ignore[arg-type]
                     packed_weight,
                     w_scale,
                     w_zp,
@@ -724,7 +726,7 @@ def register_onednn_fusion_ops():
             ):
                 # W_zp might be a ConstantBuffer with int64, convert it to int32
                 w_zp_tensor = V.graph.constants[w_zp.get_name()].to(torch.int32)
-                w_zp = V.graph.add_tensor_constant(
+                w_zp = V.graph.add_tensor_constant(  # type: ignore[assignment]
                     torch.tensor(w_zp_tensor, dtype=torch.int32), name=w_zp.get_name()
                 )
 
@@ -1027,7 +1029,7 @@ def register_onednn_fusion_ops():
                 ir.ConstantBuffer,
             ):
                 w_zp_tensor = V.graph.constants[w_zp.get_name()].to(torch.int32)
-                w_zp = V.graph.add_tensor_constant(
+                w_zp = V.graph.add_tensor_constant(  # type: ignore[assignment]
                     torch.tensor(w_zp_tensor, dtype=torch.int32), name=w_zp.get_name()
                 )
             if binary_attr == "sum":
